@@ -1,0 +1,59 @@
+
+---
+
+- name: Preflight check AI lab nodes
+
+  hosts: ai_lab
+
+  become: true
+
+  gather_facts: true
+
+  tasks:
+
+    - name: Show node summary
+
+      ansible.builtin.debug:
+
+        msg:
+
+          - "Hostname: {{ ansible_facts['hostname'] }}"
+
+          - "OS: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
+
+          - "Kernel: {{ ansible_facts['kernel'] }}"
+
+          - "CPU cores: {{ ansible_facts['processor_vcpus'] }}"
+
+          - "Memory MB: {{ ansible_facts['memtotal_mb'] }}"
+
+          - "Default IPv4: {{ ansible_facts['default_ipv4']['address'] | default('missing') }}"
+
+    - name: Check default route
+
+      ansible.builtin.command: ip route
+
+      register: routes
+
+      changed_when: false
+
+    - name: Display routes
+
+      ansible.builtin.debug:
+
+        var: routes.stdout_lines
+
+    - name: Check DNS
+
+      ansible.builtin.command: getent hosts archive.ubuntu.com
+
+      register: dns_check
+
+      changed_when: false
+
+    - name: Display DNS check
+
+      ansible.builtin.debug:
+
+        var: dns_check.stdout_lines
+
