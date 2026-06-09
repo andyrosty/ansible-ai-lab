@@ -1,14 +1,40 @@
 Ansible AI Lab
 ==============
 
-This repository contains a small Ansible configuration for bootstrapping and checking Linux hosts that you want to use as an "AI lab" (for development, experimentation, or demos).
+This repository contains Ansible playbooks for preparing and operating Debian/Ubuntu hosts as a lightweight AI lab for development, experiments, and demos.
 
-The playbooks uses Debian/Ubuntu-based machines.
+It currently supports:
+
+- Host connectivity and environment preflight checks
+- Base system + Python AI stack bootstrap
+- Swap provisioning for memory-constrained machines
+- Ollama installation, model pull, and test run
+- Runtime status checks for memory, swap, Ollama service, API, and models
+
+Prerequisites
+-------------
+
+- Control machine with Ansible installed
+- Target hosts running Debian/Ubuntu
+- SSH access to targets with a user that can escalate with `sudo`
+- Internet access on target hosts (for apt, pip, and Ollama/model downloads)
+
+Repository layout
+-----------------
+
+- `inventory/hosts.yml`: Host/group inventory (default is group `ai_lab`)
+- `playbooks/preflight.yml`: Connectivity and host sanity checks
+- `playbooks/bootstrap.yml`: Base package + Python environment bootstrap
+- `playbooks/swap.yml`: Swap file creation and persistence
+- `playbooks/ollama.yml`: Ollama install/start, model pull, and smoke test
+- `playbooks/status.yml`: Runtime checks for system and Ollama
+- `ansible.cfg`: Default inventory path and Ansible behavior
+- `Makefile`: Shortcuts for common commands
 
 Inventory
 ---------
 
-The default inventory is at `inventory/hosts.yml` and looks like this:
+Default inventory: `inventory/hosts.yml`
 
 ```yaml
 all:
@@ -20,24 +46,57 @@ all:
           ansible_user: andrew
 ```
 
-Update `ansible_host` and `ansible_user` to match your environment. Add more hosts under `ai_lab` as needed.
+Update `ansible_host` and `ansible_user` for your environment, and add more hosts under `ai_lab` as needed.
 
-If you want to override the default remote user or other connection settings globally, you can also adjust `ansible.cfg`.
+Configuration defaults
+----------------------
+
+`ansible.cfg` is set up to:
+
+- Use `inventory/hosts.yml` by default
+- Disable host key checking
+- Disable retry files
+- Auto-detect Python interpreter on hosts (`auto_silent`)
+
+Quick start
+-----------
+
+1. Validate connectivity:
+
+   ```bash
+   make ping
+   ```
+
+2. Run preflight checks:
+
+   ```bash
+   make preflight
+   ```
+
+3. Bootstrap AI tooling:
+
+   ```bash
+   make bootstrap
+   ```
+
+Optional next steps:
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/swap.yml
+ansible-playbook -i inventory/hosts.yml playbooks/ollama.yml
+ansible-playbook -i inventory/hosts.yml playbooks/status.yml
+```
 
 Playbooks
 ---------
 
-### Preflight checks
+### `preflight.yml`
 
-Runs basic checks to ensure connectivity and sanity of the target node(s).
+Runs basic host checks:
 
-File: `playbooks/preflight.yml`
-
-It:
-
-- Gathers facts and prints a summary (hostname, OS, kernel, CPU, memory, IP).
-- Shows the default network routes (`ip route`).
-- Checks DNS resolution for `archive.ubuntu.com`.
+- Gathers facts and prints hostname/OS/kernel/CPU/memory/default IPv4
+- Displays routes via `ip route`
+- Checks DNS resolution with `getent hosts archive.ubuntu.com`
 
 Run:
 
@@ -45,25 +104,21 @@ Run:
 ansible-playbook -i inventory/hosts.yml playbooks/preflight.yml
 ```
 
-### Bootstrap AI lab node(s)
+### `bootstrap.yml`
 
-Installs base packages and prepares a Python environment for AI work.
+Prepares a general AI-ready baseline:
 
-File: `playbooks/bootstrap.yml`
-
-It:
-
-- Updates apt cache.
-- Installs common utilities (curl, wget, git, vim, htop, unzip, etc.).
-- Creates `/opt/ai-lab` owned by the connecting user.
-- Creates a Python virtual environment at `/opt/ai-lab/.venv`.
-- Upgrades `pip`, `wheel`, `setuptools` in the venv.
-- Installs initial Python AI/data packages, including:
-  - jupyterlab
-  - numpy, pandas, matplotlib
-  - requests
-  - transformers, sentence-transformers, accelerate
-  - torch
+- Updates apt cache
+- Installs core packages (`curl`, `git`, `build-essential`, `python3-venv`, etc.)
+- Creates `/opt/ai-lab`
+- Creates venv at `/opt/ai-lab/.venv`
+- Upgrades `pip`, `wheel`, `setuptools`
+- Installs starter Python packages:
+  - `jupyterlab`
+  - `numpy`, `pandas`, `matplotlib`
+  - `requests`
+  - `transformers`, `sentence-transformers`, `accelerate`
+  - `torch`
 
 Run:
 
@@ -71,52 +126,91 @@ Run:
 ansible-playbook -i inventory/hosts.yml playbooks/bootstrap.yml
 ```
 
-Note: The `bootstrap` playbook assumes enough disk space and that installing `torch` from PyPI is acceptable. For GPUs or specific CUDA versions you may need to customize the package list.
+### `swap.yml`
 
-Customization
--------------
+Creates and enables swap (default: 8 GB at `/swapfile`):
 
-- Add or override group-level variables in `group_vars/ai_lab/`.
-- Add roles under `roles/` and include them from the playbooks if this setup grows.
-- Modify the package lists in `playbooks/bootstrap.yml` to match your preferred stack.
+- Creates swap file if missing
+- Sets secure permissions
+- Formats and enables swap
+- Persists mount in `/etc/fstab`
+- Prints `free -h` output
 
-Usage examples
---------------
-
-Using make targets (shorter commands):
+Run:
 
 ```bash
-make ping
-make preflight
-make bootstrap
+ansible-playbook -i inventory/hosts.yml playbooks/swap.yml
 ```
 
-Common overrides:
+### `ollama.yml`
+
+Installs and verifies Ollama:
+
+- Installs Ollama if not already present
+- Ensures `ollama` service is enabled and running
+- Displays installed Ollama version
+- Pulls starter model `llama3.2:1b`
+- Runs a one-line model test prompt
+
+Run:
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/ollama.yml
+```
+
+### `status.yml`
+
+Checks runtime lab status:
+
+- Shows memory/swap (`free -h`)
+- Reads Ollama systemd service state
+- Calls local Ollama API (`/api/tags`)
+- Lists local models (`ollama list`)
+
+Run:
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/status.yml
+```
+
+Make targets
+------------
+
+Available shortcuts:
+
+- `make help`
+- `make ping`
+- `make preflight`
+- `make bootstrap`
+- `make syntax-check`
+- `make dry-run`
+
+Examples:
 
 ```bash
 make preflight PLAYBOOK_ARGS="--limit ai-lab-01"
 make bootstrap PLAYBOOK_ARGS="--ask-become-pass --limit ai-lab-01"
 ```
 
-Ping all AI lab nodes to verify connectivity:
+`syntax-check` and `dry-run` currently cover `preflight.yml` and `bootstrap.yml`.
 
-```bash
-ansible -i inventory/hosts.yml ai_lab -m ping
-```
+Customization
+-------------
 
-Run preflight checks:
+- Add host/group variables under `group_vars/ai_lab/`
+- Add role-based structure under `roles/` as the setup grows
+- Adjust package lists in `playbooks/bootstrap.yml`
+- Change swap size/path in `playbooks/swap.yml` vars (`swap_size_mb`, `swap_file`)
+- Change Ollama model in `playbooks/ollama.yml`
 
-```bash
-ansible-playbook -i inventory/hosts.yml playbooks/preflight.yml
-```
+Notes
+-----
 
-Bootstrap the environment:
-
-```bash
-ansible-playbook -i inventory/hosts.yml playbooks/bootstrap.yml
-```
+- `bootstrap.yml` installs `torch` from PyPI; GPU/CUDA setups may need custom package indexes or versions.
+- `ollama.yml` pulls a model, which can take time and bandwidth.
+- `status.yml` assumes Ollama is installed and running on target hosts.
 
 License
 -------
 
-This project is licensed under the terms described in `LICENSE`.
+This project is licensed under the terms in `LICENSE`.
