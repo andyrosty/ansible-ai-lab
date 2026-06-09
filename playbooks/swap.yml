@@ -1,0 +1,62 @@
+---
+- name: Configure swap for AI lab
+  hosts: ai_lab
+  become: true
+  gather_facts: true
+
+  vars:
+    swap_file: /swapfile
+    swap_size_mb: 8192
+
+  tasks:
+    - name: Check if swap file exists
+      ansible.builtin.stat:
+        path: "{{ swap_file }}"
+      register: swap_stat
+
+    - name: Create swap file
+      ansible.builtin.command: "fallocate -l {{ swap_size_mb }}M {{ swap_file }}"
+      when: not swap_stat.stat.exists
+
+    - name: Set swap file permissions
+      ansible.builtin.file:
+        path: "{{ swap_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Check if swap file is already formatted
+      ansible.builtin.command: "file {{ swap_file }}"
+      register: swap_file_type
+      changed_when: false
+
+    - name: Format swap file
+      ansible.builtin.command: "mkswap {{ swap_file }}"
+      when: "'swap file' not in swap_file_type.stdout"
+
+    - name: Enable swap
+      ansible.builtin.command: "swapon {{ swap_file }}"
+      register: swapon_result
+      changed_when: swapon_result.rc == 0
+      failed_when:
+        - swapon_result.rc != 0
+        - "'already active' not in swapon_result.stderr"
+
+    - name: Persist swap in fstab
+      ansible.builtin.mount:
+        name: none
+        src: "{{ swap_file }}"
+        fstype: swap
+        opts: sw
+        passno: "0"
+        dump: "0"
+        state: present
+
+    - name: Show memory and swap
+      ansible.builtin.command: free -h
+      register: free_output
+      changed_when: false
+
+    - name: Display memory and swap
+      ansible.builtin.debug:
+        var: free_output.stdout_lines

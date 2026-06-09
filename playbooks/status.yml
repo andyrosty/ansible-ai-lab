@@ -1,0 +1,79 @@
+
+---
+
+- name: Check AI lab status
+
+  hosts: ai_lab
+
+  become: true
+
+  gather_facts: true
+
+  tasks:
+
+    - name: Show memory and swap
+
+      ansible.builtin.command: free -h
+
+      register: memory_status
+
+      changed_when: false
+
+    - name: Display memory and swap
+
+      ansible.builtin.debug:
+
+        var: memory_status.stdout_lines
+
+    - name: Check Ollama service
+
+      ansible.builtin.systemd:
+
+        name: ollama
+
+      register: ollama_service
+
+    - name: Display Ollama service state
+
+      ansible.builtin.debug:
+
+        msg:
+
+          - "Ollama loaded: {{ ollama_service.status.LoadState }}"
+
+          - "Ollama active: {{ ollama_service.status.ActiveState }}"
+
+          - "Ollama substate: {{ ollama_service.status.SubState }}"
+
+    - name: Check Ollama API
+
+      ansible.builtin.uri:
+
+        url: http://127.0.0.1:11434/api/tags
+
+        method: GET
+
+        return_content: true
+
+      register: ollama_api
+
+    - name: Display Ollama API response
+
+      ansible.builtin.debug:
+
+        var: ollama_api.json
+
+    - name: List local Ollama models
+
+      ansible.builtin.command: ollama list
+
+      register: ollama_models
+
+      changed_when: false
+
+    - name: Display local Ollama models
+
+      ansible.builtin.debug:
+
+        var: ollama_models.stdout_lines
+
